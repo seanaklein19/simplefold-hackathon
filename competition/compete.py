@@ -82,13 +82,16 @@ def run_training(team_dir: Path, max_steps: int, gpu: int):
     dest = Path("configs/experiment") / f"{team_config_name}.yaml"
     shutil.copy2(config_path, dest)
 
+    ckpt_interval = max(1, max_steps // 2)
     cmd = [
         sys.executable, str(train_script_path),
         f"experiment={team_config_name}",
         f"trainer.max_steps={max_steps}",
         f"trainer.devices=1",
+        f"trainer.val_check_interval={ckpt_interval}",
         f"paths.output_dir={artifacts_dir}",
         f"callbacks.model_checkpoint.dirpath={artifacts_dir}/checkpoints",
+        f"callbacks.model_checkpoint.every_n_train_steps={ckpt_interval}",
     ]
 
     env = os.environ.copy()

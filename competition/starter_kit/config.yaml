@@ -1,0 +1,68 @@
+# @package _global_
+#
+# SimpleFold Hackathon - Your Config
+# ===================================
+# Modify any parameters below to improve fold quality.
+# Budget: 5000 training steps (enforced).
+# ESM is fixed at esm2_8M for everyone.
+#
+# KEY KNOBS TO EXPLORE:
+#   - Architecture: depth, hidden_size, num_heads (see foldingdit configs)
+#   - Learning rate & warmup schedule
+#   - Loss weights: smooth_lddt_loss_weight
+#   - Multiplicity: noised copies per protein per step
+#   - Max tokens / crop size
+#   - Gradient accumulation
+#
+# You can also modify train.py to change the training loop,
+# add custom losses, change the flow schedule, etc.
+
+defaults:
+  - override /data: competition
+  - override /model: simplefold
+  - override /model/architecture: foldingdit_100M
+  - override /model/sampler: euler_maruyama
+  - override /model/processor: protein_processor
+  - override /callbacks: default
+  - override /trainer: competition
+  - override /logger: tensorboard
+
+seed: 12345
+
+trainer:
+  max_steps: 5000
+  val_check_interval: 2500
+  accumulate_grad_batches: 1    # try 2 or 4 for effective larger batch
+
+data:
+  batch_size: 1
+  num_workers: 4
+
+model:
+  _target_: model.simplefold.SimpleFold
+  ema_decay: 0.999              # EMA decay for model averaging
+  clip_grad_norm_val: 2.0       # gradient clipping
+  esm_model: "esm2_8M"         # FIXED - do not change
+  lddt_weight_schedule: False
+  smooth_lddt_loss_weight: 1.0  # weight of lDDT loss vs MSE loss
+
+  optimizer:
+    _target_: torch.optim.AdamW
+    _partial_: true
+    lr: 1e-4                    # learning rate - try 3e-4, 5e-4, etc.
+    weight_decay: 0.0           # try 0.01
+
+  scheduler:
+    _target_: utils.lr_scheduler.LinearWarmup
+    _partial_: true
+    min_lr: 1e-6
+    max_lr: ${model.optimizer.lr}
+    warmup_steps: 100           # try 50, 200, 500
+
+  architecture:
+    esm_model: ${model.esm_model}
+
+  processor:
+    scale: 16.0
+    ref_scale: 5.0
+    multiplicity: 1             # try 2, 4, 8 (more = better signal, slower)

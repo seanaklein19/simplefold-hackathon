@@ -1,0 +1,36 @@
+_target_: datasets.train_datamodule.SimpleFoldTrainingDataModule
+
+datasets:
+  - _target_: datasets.train_datamodule.DatasetConfig
+    data_name: local_pdb
+    tokenized_dir: ./data/tokenized
+    target_dir: ./data/processed_targets
+    manifest_path: ./data/tokenized/manifest.json
+    cropper:
+      _target_: boltz_data_pipeline.crop.boltz.BoltzCropper
+      min_neighborhood: 0
+      max_neighborhood: 40
+
+filters: null
+
+tokenizer:
+  _target_: boltz_data_pipeline.tokenize.boltz_protein.BoltzTokenizer
+
+featurizer:
+  _target_: boltz_data_pipeline.feature.featurizer.BoltzFeaturizer
+
+symmetries: ./data/symmetry.pkl
+max_tokens: 128
+max_atoms: 1152
+pad_to_max_tokens: False
+pad_to_max_atoms: False
+batch_size: 1
+num_workers: 0
+pin_memory: False
+return_train_symmetries: False
+min_dist: 2.0
+max_dist: 22.0
+num_bins: 64
+atoms_per_window_queries: 32
+rotation_augment_ref_pos: False
+rotation_augment_coords: True

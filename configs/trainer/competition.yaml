@@ -1,0 +1,17 @@
+_target_: lightning.pytorch.trainer.Trainer
+default_root_dir: ${paths.output_dir}
+
+deterministic: False
+accelerator: gpu
+devices: 1
+strategy:
+  _target_: lightning.pytorch.strategies.SingleDeviceStrategy
+  device: cuda:0
+num_nodes: 1
+min_epochs: 1
+max_steps: 5000
+precision: bf16-mixed
+val_check_interval: 2500
+check_val_every_n_epoch: null
+num_sanity_val_steps: 0
+limit_val_batches: 0.0

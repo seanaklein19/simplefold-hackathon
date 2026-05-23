@@ -8,16 +8,36 @@ echo "Creating virtual environment..."
 python3 -m venv venv
 source venv/bin/activate
 
-# 2. Install package + deps
-echo "Installing simplefold..."
+# 2. Install torch with correct CUDA version
 pip install --upgrade pip
+if command -v nvidia-smi &> /dev/null; then
+    CUDA_VER=$(nvidia-smi | grep "CUDA Version" | awk '{print $9}')
+    CUDA_MAJOR=$(echo $CUDA_VER | cut -d. -f1)
+    CUDA_MINOR=$(echo $CUDA_VER | cut -d. -f2)
+    echo "Detected CUDA ${CUDA_VER}"
+
+    # Try exact match first, then fall back
+    for tag in "cu${CUDA_MAJOR}${CUDA_MINOR}" "cu${CUDA_MAJOR}$((CUDA_MINOR-1))" "cu${CUDA_MAJOR}$((CUDA_MINOR-2))" "cu124" "cu121"; do
+        echo "Trying PyTorch for ${tag}..."
+        if pip install torch torchvision --index-url "https://download.pytorch.org/whl/${tag}" 2>/dev/null; then
+            echo "Installed PyTorch for ${tag}"
+            break
+        fi
+    done
+else
+    echo "No GPU detected, installing CPU PyTorch"
+    pip install torch torchvision
+fi
+
+# 3. Install package + deps
+echo "Installing simplefold..."
 pip install -e .
 pip install redis fairscale tensorboard
 
-# 3. Create required directories
+# 4. Create required directories
 mkdir -p artifacts/checkpoints artifacts/tensorboard artifacts/samples logs tmp
 
-# 4. Quick sanity check: train 20 steps
+# 5. Quick sanity check: train 20 steps
 echo ""
 echo "=== Sanity check: 20 training steps ==="
 python src/simplefold/train.py \

@@ -7,32 +7,37 @@ echo "=== SimpleFold Hackathon Setup ==="
 echo "Creating virtual environment..."
 python3 -m venv venv
 source venv/bin/activate
-
-# 2. Install torch with correct CUDA version
 pip install --upgrade pip
+
+# 2. Install package and deps (this will install a default torch)
+echo "Installing simplefold..."
+pip install -e .
+pip install redis fairscale tensorboard
+
+# 3. NOW reinstall torch with correct CUDA version (overrides the default)
 if command -v nvidia-smi &> /dev/null; then
     CUDA_VER=$(nvidia-smi | grep "CUDA Version" | awk '{print $9}')
     CUDA_MAJOR=$(echo $CUDA_VER | cut -d. -f1)
     CUDA_MINOR=$(echo $CUDA_VER | cut -d. -f2)
-    echo "Detected CUDA ${CUDA_VER}"
+    echo "Detected CUDA ${CUDA_VER}, reinstalling PyTorch with GPU support..."
 
-    # Try exact match first, then fall back
+    INSTALLED=false
     for tag in "cu${CUDA_MAJOR}${CUDA_MINOR}" "cu${CUDA_MAJOR}$((CUDA_MINOR-1))" "cu${CUDA_MAJOR}$((CUDA_MINOR-2))" "cu124" "cu121"; do
         echo "Trying PyTorch for ${tag}..."
-        if pip install torch torchvision --index-url "https://download.pytorch.org/whl/${tag}" 2>/dev/null; then
+        if pip install torch torchvision --index-url "https://download.pytorch.org/whl/${tag}" --force-reinstall 2>/dev/null; then
             echo "Installed PyTorch for ${tag}"
+            INSTALLED=true
             break
         fi
     done
-else
-    echo "No GPU detected, installing CPU PyTorch"
-    pip install torch torchvision
-fi
 
-# 3. Install package + deps
-echo "Installing simplefold..."
-pip install -e .
-pip install redis fairscale tensorboard
+    if [ "$INSTALLED" = false ]; then
+        echo "WARNING: Could not install CUDA-compatible PyTorch. Falling back to default."
+    fi
+
+    # Verify
+    python -c "import torch; print(f'PyTorch {torch.__version__}, CUDA {torch.version.cuda}, available: {torch.cuda.is_available()}')"
+fi
 
 # 4. Create required directories
 mkdir -p artifacts/checkpoints artifacts/tensorboard artifacts/samples logs tmp

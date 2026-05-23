@@ -138,7 +138,7 @@ def run_inference(args):
                 af2_to_esm=af2_to_esm,
             )
 
-            batch_device = processor.batch_to_device(batch, device)
+            batch_device = processor.batch_to_device(batch)
             noise = torch.randn_like(batch_device['coords']).to(device)
 
             with torch.no_grad():

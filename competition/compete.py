@@ -114,7 +114,7 @@ def run_training(team_dir: Path, max_steps: int, gpu: int):
     print(f"  Checkpoints: {[c.name for c in ckpts]}")
 
 
-def run_inference(team_dir: Path, test_fastas_dir: Path, gpu: int, arch_name: str):
+def run_inference(team_dir: Path, test_dir: Path, gpu: int, arch_name: str):
     ckpt_dir = team_dir / "artifacts" / "checkpoints"
     last_ckpt = ckpt_dir / "last.ckpt"
     if not last_ckpt.exists():
@@ -129,7 +129,7 @@ def run_inference(team_dir: Path, test_fastas_dir: Path, gpu: int, arch_name: st
     cmd = [
         sys.executable, "competition/run_inference.py",
         "--checkpoint", str(last_ckpt),
-        "--test-fastas", str(test_fastas_dir),
+        "--test-dir", str(test_dir),
         "--output-dir", str(pred_dir),
         "--architecture", arch_name,
         "--num-steps", "200",
@@ -263,7 +263,7 @@ def main():
 
     comp_dir = Path(__file__).parent
     runs_dir = comp_dir / "runs"
-    test_fastas_dir = comp_dir / "test_fastas"
+    test_dir = comp_dir / "test_data"
     leaderboard_path = comp_dir / "leaderboard.json"
 
     if args.test_ref_dir:
@@ -285,7 +285,7 @@ def main():
 
     # 3. Infer
     if not args.skip_inference:
-        run_inference(team_dir, test_fastas_dir, args.gpu, arch_name)
+        run_inference(team_dir, test_dir, args.gpu, arch_name)
 
     # 4. Score
     scores = score_predictions_from_refs(team_dir, test_ref_dir)

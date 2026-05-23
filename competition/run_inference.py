@@ -1,14 +1,15 @@
 """
 Run inference on test proteins using a training checkpoint.
+Uses pre-processed test structures directly (no downloads needed).
 
 Usage:
     python competition/run_inference.py \
         --checkpoint competition/runs/team/artifacts/checkpoints/last.ckpt \
-        --test-fastas competition/test_fastas/ \
+        --test-dir competition/test_data \
         --output-dir competition/runs/team/predictions/ \
         --architecture foldingdit_100M \
         --num-steps 200 \
-        --device cpu
+        --device cuda:0
 """
 
 import os
@@ -32,10 +33,9 @@ from processor.protein_processor import ProteinDataProcessor
 from utils.datamodule_utils import process_one_inference_structure, collate
 from utils.esm_utils import _af2_to_esm, esm_registry
 from utils.boltz_utils import process_structure as boltz_process_structure, save_structure
-from utils.fasta_utils import process_fastas, download_fasta_utilities, check_fasta_inputs
 from boltz_data_pipeline.feature.featurizer import BoltzFeaturizer
 from boltz_data_pipeline.tokenize.boltz_protein import BoltzTokenizer
-from boltz_data_pipeline.types import Structure
+from boltz_data_pipeline.types import Structure, Record
 
 
 def load_model_from_training_ckpt(ckpt_path: str, arch_config_name: str, device: torch.device):
@@ -48,7 +48,6 @@ def load_model_from_training_ckpt(ckpt_path: str, arch_config_name: str, device:
 
     state_dict = checkpoint.get("state_dict", checkpoint)
 
-    # Try EMA weights first (model_ema.module.architecture.* -> *)
     ema_prefix = "model_ema.module.architecture."
     ema_keys = {k: k[len(ema_prefix):] for k in state_dict if k.startswith(ema_prefix)}
 
@@ -57,7 +56,6 @@ def load_model_from_training_ckpt(ckpt_path: str, arch_config_name: str, device:
         model.load_state_dict(new_state, strict=False)
         print(f"Loaded EMA weights ({len(ema_keys)} params)")
     else:
-        # Try architecture.* prefix (regular training checkpoint)
         arch_prefix = "architecture."
         arch_keys = {k: k[len(arch_prefix):] for k in state_dict if k.startswith(arch_prefix)}
         if arch_keys:
@@ -100,37 +98,24 @@ def run_inference(args):
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    cache_dir = output_dir / "_cache"
-    cache_dir.mkdir(exist_ok=True)
 
-    test_fastas = Path(args.test_fastas)
-    fasta_files = sorted(test_fastas.glob("*.fasta"))
-    print(f"Running inference on {len(fasta_files)} proteins")
+    test_dir = Path(args.test_dir)
+    struct_dir = test_dir / "processed" / "structures"
+    record_dir = test_dir / "processed" / "records"
 
-    download_fasta_utilities(cache_dir)
+    struct_files = sorted(struct_dir.glob("*.npz"))
+    print(f"Running inference on {len(struct_files)} proteins")
 
-    for fasta_file in fasta_files:
-        protein_id = fasta_file.stem
+    for struct_file in struct_files:
+        protein_id = struct_file.stem
+        record_file = record_dir / f"{protein_id}.json"
         print(f"  Processing {protein_id}...")
 
+        if not record_file.exists():
+            print(f"    Skipping {protein_id}: no record file")
+            continue
+
         try:
-            data = check_fasta_inputs(fasta_file)
-            if not data:
-                print(f"    Skipping {protein_id}: invalid FASTA")
-                continue
-
-            proc_dir = cache_dir / protein_id
-            proc_dir.mkdir(exist_ok=True)
-            process_fastas(data=data, out_dir=proc_dir, ccd_path=cache_dir / "ccd.pkl")
-
-            struct_files = list((proc_dir / "structures").glob("*.npz"))
-            if not struct_files:
-                print(f"    Skipping {protein_id}: no structure generated")
-                continue
-
-            struct_file = struct_files[0]
-            record_file = proc_dir / "records" / f"{struct_file.stem}.json"
-
             batch, structure, record = process_one_inference_structure(
                 str(struct_file), str(record_file),
                 tokenizer, featurizer, processor,
@@ -138,15 +123,15 @@ def run_inference(args):
                 af2_to_esm=af2_to_esm,
             )
 
-            batch_device = processor.batch_to_device(batch)
-            noise = torch.randn_like(batch_device['coords']).to(device)
+            batch = processor.batch_to_device(batch)
+            noise = torch.randn_like(batch['coords']).to(device)
 
             with torch.no_grad():
-                out_dict = sampler.sample(model.forward, flow, noise, batch_device)
-                out_dict = processor.postprocess(out_dict, batch_device)
+                out_dict = sampler.sample(model.forward, flow, noise, batch)
+                out_dict = processor.postprocess(out_dict, batch)
 
             sampled_coord = out_dict['denoised_coords'].detach()
-            pad_mask = batch_device['atom_pad_mask']
+            pad_mask = batch['atom_pad_mask']
 
             sampled_structure = copy.deepcopy(structure)
             sampled_structure = boltz_process_structure(
@@ -158,6 +143,8 @@ def run_inference(args):
 
         except Exception as e:
             print(f"    Failed on {protein_id}: {e}")
+            import traceback
+            traceback.print_exc()
             continue
 
     print(f"\nPredictions saved to {output_dir}")
@@ -166,7 +153,7 @@ def run_inference(args):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--checkpoint", required=True)
-    parser.add_argument("--test-fastas", required=True)
+    parser.add_argument("--test-dir", required=True)
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--architecture", default="foldingdit_100M")
     parser.add_argument("--num-steps", type=int, default=200)
